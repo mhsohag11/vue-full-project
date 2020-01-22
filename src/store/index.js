@@ -15,6 +15,8 @@ export default new Vuex.Store({
     user : null,
     loading : false,
     error : false,
+    uploadVal: null,
+    uploadStatus: null,
   },
   mutations: {
     pushNewMeetup (state , payload) {
@@ -35,6 +37,12 @@ export default new Vuex.Store({
     meetupsFromDatabase ( state , payload ) {
       state.loadedMeetups = payload
     },
+    uploadVal (state, payload) {
+      state.uploadVal = payload
+    },
+    uploadStatus (state , payload) {
+      state.uploadStatus = payload
+    }
 
   },
   actions: {
@@ -51,7 +59,8 @@ export default new Vuex.Store({
                 date : obj[key].date,
                 time : obj[key].time,
                 location: obj[key].location,
-                description: obj[key].description
+                description: obj[key].description,
+                creatorId: obj[key].creatorId
               })
             }
             commit('meetupsFromDatabase' , meetups)
@@ -62,22 +71,90 @@ export default new Vuex.Store({
             console.log(error)
           })
     },
-    createNewMeetup ( {commit} , payload ) {
+    createNewMeetup ( {commit, getters } , payload ) {
       const meetup = {
         title : payload.title,
         location : payload.location,
-        imageUrl : payload.imageUrl,
         description : payload.description,
         date : payload.date,
         time : payload.time,
+        creatorId : getters.user.userID,
       }
+      let keyFromFirebase
+      let myImageUrlFromFirebase
       firebase.database().ref('meetups').push(meetup)
           .then(data => {
             commit('clearError')
-            console.log(data.key)
-            payload.id = data.key
-            commit('pushNewMeetup', payload);
+            keyFromFirebase = data.key
+            return keyFromFirebase
           })
+          .then( key => {
+            const filename = payload.image.name
+            const ext = filename.slice(filename.lastIndexOf('.'))
+            var uploadTask =  firebase.storage().ref('meetups/' + key + ext ).put(payload.image)
+            uploadTask.on(firebase.storage.TaskEvent.STATE_CHANGED,
+                (snapshot) => {
+                  var progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+                  console.log('Upload is ' + Math.floor(progress) + '% done')
+                  commit('uploadVal', Math.floor(progress))
+                  switch (snapshot.state) {
+                    case firebase.storage.TaskState.PAUSED: // or 'paused'
+                      commit('uploadStatus', 'Upload is paused')
+                      break;
+                    case firebase.storage.TaskState.RUNNING: // or 'running'
+                      commit('uploadStatus', 'Uploading...')
+                      break;
+                  }
+                },
+                (error) => {
+                  switch (error.code) {
+                    case 'storage/unauthorized':
+                      // User doesn't have permission to access the object
+                      commit('uploadStatus', 'User doesn\'t have permission to access the object')
+                      break
+
+                    case 'storage/canceled':
+                      // User canceled the upload
+                      commit('uploadStatus', 'User canceled the upload')
+                      break
+                    case 'storage/unknown':
+                      // Unknown error occurred, inspect error.serverResponse
+                      commit('uploadStatus', 'Unknown error occurred, inspect error.serverResponse')
+                      break
+                  }
+                },
+                () => {
+                  return uploadTask.snapshot.ref.getDownloadURL()
+                      .then( downloadURL => {
+                        myImageUrlFromFirebase = downloadURL
+                        return firebase.database().ref('meetups').child(keyFromFirebase).update({imageUrl : downloadURL})
+                      })
+                      .then( () => {
+                        commit('pushNewMeetup', {
+                          ...meetup,
+                          id: keyFromFirebase,
+                          imageUrl: myImageUrlFromFirebase
+                        })
+                        commit('uploadVal', null )
+                        commit('setLoading', true )
+                      })
+                }
+                )
+
+          })
+          // .then(downloadURL => {
+          //   console.log('put hoyce')
+          //   console.log(downloadURL)
+          //   myImageUrlFromFirebase = downloadURL
+          //   return firebase.database().ref('meetups').child(keyFromFirebase).update({imageUrl : downloadURL})
+          // })
+          // .then( () => {
+          //   commit('pushNewMeetup', {
+          //     ...meetup,
+          //     id: keyFromFirebase,
+          //     imageUrl: myImageUrlFromFirebase
+          //   })
+          // })
           .catch( error => {
             console.log(error)
             commit( 'setError' , error )
@@ -154,6 +231,9 @@ export default new Vuex.Store({
     },
     loading (state) {
       return state.loading
+    },
+    uploadVal (state) {
+      return state.uploadVal
     }
   }
 })

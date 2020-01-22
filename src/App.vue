@@ -132,7 +132,7 @@ export default {
   data () {
     return {
       drawer : null,
-      items: [
+      items : [
         { title: 'Dashboard', icon: 'mdi-view-dashboard' },
         { title: 'Users', icon: 'person' },
         { title: 'Logout', icon: 'mdi-help-box' , action: 'logout'},
