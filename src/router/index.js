@@ -10,7 +10,8 @@ const routes = [
   {
     path: '/',
     name: 'home',
-    component: Home
+    component: Home,
+    beforeEnter:  AuthGuard
   },
   {
     path: '/meetups',
